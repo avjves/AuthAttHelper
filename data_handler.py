@@ -3,11 +3,18 @@ import importlib
 #from clean_warpper import CleanWrapper
 class DataHandler():
 	
-	def __init__(self, train_data, test_data, clean_info, cleaner_file, cleaner_class, split_size, split_type):
-		self.cleaner = getattr(importlib.import_module(cleaner_file), cleaner_class)()
-		self.clean_info = clean_info
+	def __init__(self, train_data, test_data, positive_classes, split_size, split_type, iter, clean_stuff=None):
+		## Cleaning shouldn't be part of this shit
+		if clean_stuff != None:
+			self.cleaner = getattr(importlib.import_module(clean_stuff[1]), clean_stuff[2])()
+			self.clean_info = clean_stuff[0]
+			self.need_clean = True
+		else:
+			self.need_clean = False
 		self.split_size = split_size
 		self.split_type = split_type
+		self.iter = iter
+		self.positive_classes = positive_classes
 		self.train_data = self.read_data(train_data, train=True)
 		self.test_data = self.read_data(test_data, train=False)
 
@@ -22,21 +29,38 @@ class DataHandler():
 	
 	
 	def preprocess_text(self, text, author, book):
-		text = self.cleaner.clean(text, self.clean_info[author][book])
+		if self.need_clean:
+			text = self.cleaner.clean(text, self.clean_info[author][book])
 		return list(self.split_text(text))
 	
 	def split_text(self, text):
 		if self.split_size == -1 or self.split_size == 0:
-			yield [text]
+			return [text]
 		else:
-			for chunk in self.chunks(text):
-				yield chunk
+			chunks = []
+			for chunk in self.split(text):
+				chunks.append(" ".join(chunk))
+			return chunks
+		
 	
 	def split(self, text):
+		if self.split_type == "word":
+			text = text.split(" ")
 		for i in range(0, len(text), self.split_size):
 			if i + self.split_size < len(text)*0.90:
 				yield text[i:i + self.split_size]
-				
+			
+			
+	def binarify_classes(self, y):
+		new_y = []
+		for val in y:
+			if val in self.positive_classes:
+				new_y.append(1)
+			else:
+				new_y.append(0)
+		
+		return new_y
+		
 	def data_to_list(self, level, data):
 		X = []
 		y = []
@@ -44,35 +68,46 @@ class DataHandler():
 		for author, books in data.items():
 			for book, texts in books.items():
 				if level == "book":
-					bookd = []
-					for text_index, text in enumerate(texts):
-						bookd.append("".join(text))
-						bookinfo.append([author, book, "{}_{}".format(text_index*self.split_size, (text_index+1)*self.split_size)])
-					X.append("".join(bookd))
+					X.append("".join(texts))
+					bookinfo.append([author, book, "full"])
 					y.append(author)
 				elif level == "single":
-					for text in texts:
+					for text_index, text in enumerate(texts):
 						X.append(text)
 						y.append(author)
+						bookinfo.append([author, book, "{}_{}".format(text_index*self.split_size, (text_index+1)*self.split_size)])
 				else:
 					raise NotImplementedError("Level {} not valid.".format(level))
+		
+		y = self.binarify_classes(y)
 		return X, y, bookinfo
 	
 	def cross_validation(self, level):
 		data, y, info = self.data_to_list(level, self.train_data)
-		for i in range(0, len(data)):
-			X_train = list(data)
-			y_train = list(y)
-			train_info = list(info)
-			X_test = [X_train.pop(i)]
-			y_test = [y_train.pop(i)]
-			test_info = [train_info.pop(i)]
-			
-			yield X_train, y_train, train_info, X_test, y_test, test_info
+		if self.iter < 0:
+			for i in range(0, len(data)):
+				X_train, y_train, train_info, X_test, y_test, test_info = self.extract_sets(i, data, y, info)
+				yield X_train, y_train, train_info, X_test, y_test, test_info, i+1, len(data)
+		else:
+			X_train, y_train, train_info, X_test, y_test, test_info = self.extract_sets(self.iter, data, y, info)
+			yield X_train, y_train, train_info, X_test, y_test, test_info, i+1, -1
 
+	def extract_sets(self, i, data, y, info):
+		X_train = list(data)
+		y_train = list(y)
+		train_info = list(info)
+		X_test = [X_train.pop(i)]
+		y_test = [y_train.pop(i)]
+		test_info = train_info.pop(i)
+		
+		return X_train, y_train, train_info, X_test, y_test, test_info
 
 	def true_data(self, level):
 		train_data, train_y, train_info = self.data_to_list(level, self.train_data)
 		test_data, test_y, test_info = self.data_to_list(level, self.test_data)
-
-		return train_data, train_y, train_info, test_data, test_y, test_info
+		for i in range(0, len(test_data)):
+			X_test = [list(test_data).pop(i)]
+			y_test = [list(test_y).pop(i)]
+			t_info = list(test_info).pop(i)
+			yield train_data, train_y, train_info, X_test, y_test, t_info, i+1, len(test_data)
+			#yield train_data, train_y, train_info, test_data, test_y, test_info, 0, 0
