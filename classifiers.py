@@ -25,7 +25,11 @@ class ClassifierClass():
 		return hstack(vects)
 	
 	def classify(self, threads, generator, clsf_level):
-		results = Parallel(n_jobs=threads)(delayed(self.test)(X_train,y_train,train_info,X_test,y_test,test_info,iter,max_iter) for X_train,y_train,train_info,X_test,y_test,test_info,iter,max_iter in generator)
+		if clsf_level == "multiclass":
+			multiclass = True
+		else:
+			multiclass = False
+		results = Parallel(n_jobs=threads)(delayed(self.test)(X_train,y_train,train_info,X_test,y_test,test_info,iter,max_iter, multiclass=multiclass) for X_train,y_train,train_info,X_test,y_test,test_info,iter,max_iter in generator)
 		return results
 		
 	def test(self):
@@ -60,36 +64,39 @@ class SVM(ClassifierClass):
 		return predictions
 
 
-	def test(self, X_train, y_train, train_info, X_test, y_test, test_info, iter, max_iter, sample_weights=None):
+	def test(self, X_train, y_train, train_info, X_test, y_test, test_info, iter, max_iter, sample_weights=None, multiclass=False):
 		if self.verbose:
 			print("Iteration: {} / {}".format(iter, max_iter), end="\r")
-
+		
 		if len(X_test) == 1:
 			single = True
 		else:
 			single = False
+
 	
 		X_train = self.vectorize(X_train, True)
 		X_test = self.vectorize(X_test, False)
+
 
 		self.fit(X_train, y_train, sample_weights)
 		decision = self.decision(X_test)
 		
 		classes = self.classifier.classes_
 		
-		if single:
-		
-			if decision <= 0:
-				got = classes[0]
-			else:
-				got = classes[1]
+		if multiclass:
+			return decision, test_info, classes
 		else:
-			got = None
+			if single:
 		
-		
-		return decision, test_info, got==y_test[0]  
+				if decision <= 0:
+					got = classes[0]
+				else:
+					got = classes[1]
+			else:
+				got = None
+			return decision, test_info, got==y_test[0]  
 	
-	def get_best_features(self, X, y, num_feats, num_iter=1):
+	def get_best_features(self, X, y, num_feats, num_iter=100):
 		all_feats = {}
 		X = self.vectorize(X, True)
 		print("\n")
@@ -202,10 +209,33 @@ class VectDist(ClassifierClass):
 			
 			
 
-class CNN():
-	def __init__(self, args):
-		self.args = args
+class CNN:
+	def __init__(self, train_data, test_data, validation_data, max_sent_len, vector_size, minibatch_size, ngram):
+		self.max_sent_len = max_sent_len
+		self.vector_size = vector_size
+		self.minibatch_size = minibatch_size
+		self.ngram = ngram
+		self.train_data = train_data
+		self.test_data = test_data
+		self.validation_data = validation_data
+		
 		model = self.make_model()
+		
+	def make_model(self):
+		input_layer = Input(shape=(self.max_sent_len,), name="input_ngrams_{}".format(self.ngram), dtype="int32")
+		embedding = Embedding(self.vocab_size, self.vector_size, input_length=self.max_sent_len)(input_layer)
+		conv = Convolution1D(self.vector_size, 5, border_mode="same", activation="relu")(embedding)
+		pool = MaxPooling1D(pool_length=self.max_sent_len)(conv)
+		flat = Flatten()(pool)
+		dense = Dense(self.vector_size)(flat)
+		out = Dense(1, activation="sigmoid")(dense)
+		
+		model = Model(input=input_layer, output=out)
+		model.compile(optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"])		
+		model.summary()
+		return model
+	
+
 	
 		
 	

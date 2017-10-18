@@ -1,7 +1,7 @@
 from collections import OrderedDict
 import importlib
 #from clean_warpper import CleanWrapper
-class DataHandler():
+class DataHandler:
 	
 	def __init__(self, train_data, test_data, positive_classes, split_size, split_type, iter, clean_stuff=None):
 		## Cleaning shouldn't be part of this shit
@@ -39,7 +39,10 @@ class DataHandler():
 		else:
 			chunks = []
 			for chunk in self.split(text):
-				chunks.append(" ".join(chunk))
+				if self.split_type == "word":
+					chunks.append(" ".join(chunk))
+				else:
+					chunks.append(chunk)
 			return chunks
 		
 	
@@ -47,7 +50,7 @@ class DataHandler():
 		if self.split_type == "word":
 			text = text.split(" ")
 		for i in range(0, len(text), self.split_size):
-			if i + self.split_size < len(text)*0.90:
+			if len(text[i:i + self.split_size]) > self.split_size*0.9:
 				yield text[i:i + self.split_size]
 			
 			
@@ -111,3 +114,33 @@ class DataHandler():
 			t_info = list(test_info).pop(i)
 			yield train_data, train_y, train_info, X_test, y_test, t_info, i+1, len(test_data)
 			#yield train_data, train_y, train_info, test_data, test_y, test_info, 0, 0
+
+class MultiClassDataHandler(DataHandler):
+	
+	def __init__(self, train_data, test_data, split_size, split_type, iter, clean_stuff=None):
+		self.need_clean = False
+		self.split_size = split_size
+		self.split_type = split_type
+		self.iter = iter
+		self.train_data = self.read_data(train_data, train=True)
+		self.test_data = self.read_data(test_data, train=False)
+		
+	def data_to_list(self, level, data):
+		X = []
+		y = []
+		bookinfo = []
+		for author, books in data.items():
+			for book, texts in books.items():
+				if level == "book":
+					X.append("".join(texts))
+					bookinfo.append([author, book, "full"])
+					y.append(author)
+				elif level == "single":
+					for text_index, text in enumerate(texts):
+						X.append(text)
+						y.append(author)
+						bookinfo.append([author, book, "{}_{}".format(text_index*self.split_size, (text_index+1)*self.split_size)])
+				else:
+					raise NotImplementedError("Level {} not valid.".format(level))
+	
+		return X, y, bookinfo

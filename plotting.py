@@ -14,7 +14,7 @@ class Plotter():
 			return ( ( old_value - old_min ) / ( old_max - old_min) ) * ( new_max - new_min) + new_min
 
 
-	def plot(self, values, infos, mapping):
+	def plot(self, values, infos, mapping, title):
 		x = [val[0] for val in values]
 		if self.scale and len(x) > 1:
 			max_val, min_val = max(x), min(x)
@@ -27,6 +27,7 @@ class Plotter():
 				y.append(mapping[info[0]])
 
 		fig, ax = plt.subplots(figsize=(6,1))
+		fig.suptitle(title, fontsize=15, fontweight="bold")
 		ax.scatter(x, [1]*len(x), c=y, marker="s", s=100)
 		fig.autofmt_xdate()
 
