@@ -1,6 +1,7 @@
 from matplotlib import pyplot as plt
 import time
 import numpy as np
+np.random.seed(1)
 
 class Plotter():
 
@@ -21,7 +22,7 @@ class Plotter():
 			x = [self.conv(val, min_val, max_val, -1, 1) for val in x]
 		y = []
 		for info in infos:
-			if info[0] not in mapping or info[0] == "Test":
+			if info[0][0] not in mapping or info[0][0] == "Test":
 				y.append("Green")
 			else:
 				y.append(mapping[info[0]])
@@ -41,7 +42,7 @@ class Plotter():
 		if self.verbose:
 			for i in range(len(sorts)):
 				j = sorts[i]
-				print("Author: {}\tBook: {}\t Value: {}".format(infos[j][0], infos[j][1], x[j]))
+				print("Author: {}\tBook: {}\t Value: {}".format(infos[j][0][0], infos[j][0][1], x[j]))
 
 		time.sleep(1) ## So print finishes
 		plt.show()
