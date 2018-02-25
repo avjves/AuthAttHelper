@@ -6,6 +6,7 @@ from joblib import Parallel, delayed
 import os, pickle
 from operator import itemgetter
 from collections import OrderedDict
+import math
 
 class Handler():
 
@@ -26,8 +27,10 @@ class Handler():
 		self.results = self.classifier.classify(self.threads, self.data_handler.cross_validation(self.data_type), "CV")
 		#tuple is (classification value, information about said classification)
 		for res_tuple in self.results:
+			if len(res_tuple) == 0:
+				continue
 			self.decisions.append(res_tuple[0])
-			self.infos.append(res_tuple[1])
+			self.infos.append(res_tuple[1][0])
 #	else:
 			#res = self.classifier.classify(self.data_handler.cross_validation())
 
@@ -53,22 +56,27 @@ class Handler():
 		print("\nOptimal C:{}".format(C_values[sorted_indexes[-1]]))
 		self.classifier.change_C(C_values[sorted_indexes[-1]])
 
-	def optimize_parameters(self, parameters):
-		print("Optimizing parameters..")
+	def optimize_cnn(self, parameters):
+		print("Optimizing CNN parameters..")
 		self.classifier.optimize_parameters(parameters, self.data_handler.true_data(self.data_type))
 
-	def attribute_testdata(self):
+	def attribute_testdata(self, keep_test_seperate=False):
+		print()
+		self.keep_test_seperate = keep_test_seperate
 		results = self.classifier.classify(self.threads, self.data_handler.true_data(self.data_type), "test")
 		for result in results:
 			self.decisions.append(result[0])
-			self.infos.append(result[1])
+			self.infos.append(result[1][0])
 
 
 
 	def plot_values(self, scale=False, title=" "):
 		self.plotter.scale=scale
-		if self.data_type == "single":
-			self.aggregate_results()
+	#	if self.data_type == "single" or self.data_type == "book_split":
+		self.aggregate_results()
+		#else:
+			#self.format_results()
+
 		authors = self.get_authors()
 		mapping = {}
 		for author in authors:
@@ -76,7 +84,9 @@ class Handler():
 				mapping[author] = "blue"
 			else:
 				mapping[author] = "red"
+
 		self.plotter.plot(self.decisions, self.infos, mapping, title)
+
 
 
 	def aggregate_results(self):
@@ -93,6 +103,12 @@ class Handler():
 		new_decisions = []
 		new_info = []
 		for key, value in data.items():
+			if "test" in key and self.keep_test_seperate == True:
+				for val_i, val in enumerate(value[0]):
+					new_decision = val
+					new_decisions.append(new_decision)
+					new_info.append([value[1][0][0], value[1][0][1] + "_"+ str(val_i), "full"])
+
 			new_decision = sum(value[0]) / len(value[0])
 			new_decisions.append(new_decision)
 			new_info.append([value[1][0][0], value[1][0][1], "full"])
@@ -112,13 +128,24 @@ class Handler():
 		features = self.classifier.get_best_features(X_train, y_train, num_feats)
 		print("Positive features:\n")
 		self.print_feat(features["POS"])
-		print("Negative features:\n")
+		print("\nNegative features:\n")
+		self.print_feat(features["NEG"])
+
+	def get_best_features_nsampling(self, text_percentage, sampling_count):
+		X_train, y_train, _, _, _, _, _, _ = next(self.data_handler.true_data(self.data_type))
+		features = self.classifier.get_best_features_nsampling(X_train, y_train, text_percentage, sampling_count)
+		print("Positive features: \n")
+		self.print_feat(features["POS"])
+		print("\nNegative features:\n")
 		self.print_feat(features["NEG"])
 
 	def print_feat(self, feats):
-		for feat in feats:
-			print("{}\t{}".format(feat[0], round(feat[1], 3)))
-
+		if len(feats[0]) == 2: ## normal feat
+			for feat in feats:
+				print("{}\t{}".format(feat[0], round(feat[1], 3)))
+		elif len(feats[0]) == 3: ##nsampled
+			for feat in feats:
+				print("{}\t{}\t{}".format(feat[0], feat[1], round(feat[2], 3)))
 
 	def get_results(self):
 		pass
@@ -129,8 +156,8 @@ class Handler():
 		return ((old_value - old_min) / (old_max - old_min)) * (new_max - new_min) + new_min
 
 	def print_results(self, normalize=False):
-		if self.data_type == "single" or self.data_type == "book_split":
-			self.aggregate_results()
+	#	if self.data_type == "single" or self.data_type == "book_split":
+		self.aggregate_results()
 		min_val, max_val = min(self.decisions), max(self.decisions)
 		res = sorted(zip(self.decisions, self.infos), key=itemgetter(0), reverse=True)
 		for val in res:
@@ -138,7 +165,8 @@ class Handler():
 				value = self.norm_value(val[0], min_val, max_val, -1, 1)
 			else:
 				value = val[0]
-			print("Author: {}\tBook: {}\tDecision: {}".format(val[1][0], val[1][1], round(value[0], 3)))
+			value = math.floor(value[0] * 1000) / 1000.0
+			print("Author: {}\tBook: {}\tDecision: {}".format(val[1][0], val[1][1], value))
 
 	def load_iteration_results(self, result_folder):
 		files = os.listdir(result_folder)
@@ -150,7 +178,7 @@ class Handler():
 				self.decisions.append(res[0][0][i])
 				info = res[0][1][i]
 				self.infos.append(info)
-				print(info, filename)
+				#print(info, filename)
 			print("Read: {}".format(file_i), end="\r")
 			print()
 
@@ -203,8 +231,8 @@ class MultiClassHandler(Handler):
 
 
 	def attribute_testdata(self):
-		results = self.classifier.classify(self.threads, self.data_handler.true_data(self.data_type), "multiclass")
-		for result in results:
+		self.results = self.classifier.classify(self.threads, self.data_handler.true_data(self.data_type), "multiclass")
+		for result in self.results:
 			self.decisions.append(result[0])
 			self.infos.append(result[1])
 			self.classes = result[2]

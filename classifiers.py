@@ -1,9 +1,6 @@
 import numpy as np
 np.random.seed(1)
 
-
-
-
 from sklearn.svm import LinearSVC
 from scipy.sparse import hstack
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -11,14 +8,25 @@ from sklearn.model_selection import KFold
 from sklearn.utils import shuffle
 from joblib import Parallel, delayed
 from operator import itemgetter
-from keras.models import Sequential, Model
-from keras.layers import Dense, Dropout, Activation, Merge, Input, merge, Flatten,ActivityRegularization,Conv1D,GlobalMaxPooling1D
-from keras.layers.embeddings import Embedding
-from keras.callbacks import EarlyStopping, ModelCheckpoint
-from keras.optimizers import Adam
 from collections import defaultdict
 
-class ClassifierClass():
+
+class ClassifierClass:
+
+	def vectorize(self):
+		pass
+
+	def extract_nested(self):
+		pass
+
+	def classify(self):
+		pass
+
+	def test(self):
+		pass
+
+
+class LinearClassifierClass(ClassifierClass):
 
 	def __init__(self, vectorizers=None, ngram_range=(1,2), analyzer="word", verbose=True):
 		self.verbose = verbose
@@ -37,6 +45,21 @@ class ClassifierClass():
 
 		return hstack(vects)
 
+	def extract_nested(self, X, y, I):
+		nX = []
+		nY = []
+		nI = []
+		for i in range(len(X)):
+			book = X[i]
+			auth = y[i]
+			info = I[i]
+			for text in book:
+				nX.append(text)
+				nY.append(auth)
+				nI.append(info)
+		return nX, nY, nI
+
+
 	def classify(self, threads, generator, clsf_level):
 		if clsf_level == "multiclass":
 			multiclass = True
@@ -48,10 +71,11 @@ class ClassifierClass():
 	def test(self):
 		pass
 
-class SVM(ClassifierClass):
+class SVM(LinearClassifierClass):
 
 	def __init__(self, C, vectorizers=None, ngram_range=(1,2), analyzer="word", verbose=True):
-		ClassifierClass.__init__(self, vectorizers, ngram_range, analyzer, verbose)
+		super().__init__(vectorizers, ngram_range, analyzer, verbose)
+		#ClassifierClass.__init__(self, vectorizers, ngram_range, analyzer, verbose)
 		self.classifier = LinearSVC(C=C, class_weight="balanced")
 
 	def change_C(self, C):
@@ -67,6 +91,12 @@ class SVM(ClassifierClass):
 		return self.classifier.decision_function(X_test)
 
 	def predict(self, X_train, y_train, X_test, y_test):
+
+		if type(X_train) == list: ## book_split
+			X_train, y_train, train_info = self.extract_nested(X_train, y_train, train_info)
+			X_test, y_test, test_info = self.extract_nested(X_test, y_test, test_info)
+
+
 		X_train = self.vectorize(X_train, True)
 		X_test = self.vectorize(X_test, False)
 
@@ -78,6 +108,14 @@ class SVM(ClassifierClass):
 
 
 	def test(self, X_train, y_train, train_info, X_test, y_test, test_info, iter, max_iter, sample_weights=None, multiclass=False):
+
+
+		if type(X_train[0]) == list: ## book_split
+			X_train, y_train, train_info = self.extract_nested(X_train, y_train, train_info)
+			X_test, y_test, test_info = self.extract_nested(X_test, y_test, test_info)
+			if len(X_train) == 0 or len(X_test) == 0:
+				return []
+
 		if self.verbose:
 			print("Iteration: {} / {}".format(iter, max_iter), end="\r")
 
@@ -85,6 +123,7 @@ class SVM(ClassifierClass):
 			single = True
 		else:
 			single = False
+
 
 
 		X_train = self.vectorize(X_train, True)
@@ -108,6 +147,47 @@ class SVM(ClassifierClass):
 			else:
 				got = None
 			return decision, test_info, got==y_test[0]
+
+	def get_best_features_nsampling(self, X, y, text_percentage, num_iter, num_feats=50):
+		feat_count = {}
+		feat_values = {}
+	#	X = self.vectorize(X, True)
+		print()
+		for i in range(num_iter):
+			print("Iteration {}/{}".format(i, num_iter), end="\r")
+			sample_indexes = np.random.choice(np.arange(0, len(X)), size=int(len(X)*text_percentage), replace=False)
+			iter_X, iter_y = [X[i] for i in sample_indexes], [y[i] for i in sample_indexes]
+
+			iter_X = self.vectorize(iter_X, True)
+			clsf = LinearSVC(C=1, penalty="l1", dual=False)
+			clsf.fit(iter_X, iter_y)
+			coef = clsf.coef_
+			vocab = self.get_vocab()
+			feats = self.coef_to_feats(coef, vocab)
+			for feat_key, feat_value in feats.items():
+				feat_count[feat_key] = feat_count.get(feat_key, 0) + 1
+				feat_values[feat_key] = feat_values.get(feat_key, 0) + feat_value
+
+		feat_list = []
+		for key in feat_count:
+			feat_list.append([key, feat_count[key], feat_values[key]])
+
+		feat_list.sort(key=itemgetter(1, 2), reverse=True)
+
+		feats = {"POS": [], "NEG": []}
+		for feat in feat_list:
+			if feat[1] < 0 and len(feats["NEG"]) < num_feats:
+				feats["NEG"].append(feat)
+			else:
+				continue
+
+		for feat in reversed(feat_list):
+			if feat[1] > 0 and len(feats["NEG"]) < num_feats:
+				feats["POS"].append(feat)
+			else:
+				continue
+		return feats
+
 
 	def get_best_features(self, X, y, num_feats, num_iter=100):
 		all_feats = {}
@@ -220,10 +300,8 @@ class VectDist(ClassifierClass):
 
 
 
+class CNN(ClassifierClass):
 
-
-
-class CNN:
 	def __init__(self, max_length, vector_size, minibatch_size, ngram, epochs):
 		self.max_length = max_length
 		self.vector_size = vector_size
@@ -231,6 +309,15 @@ class CNN:
 		self.ngram = ngram
 		self.epochs = epochs
 		self.level = "char"
+		self.load_modules()
+
+
+	def load_modules(self):
+		from keras.models import Sequential, Model
+		from keras.layers import Dense, Dropout, Activation, Merge, Input, merge, Flatten,ActivityRegularization,Conv1D,GlobalMaxPooling1D
+		from keras.layers.embeddings import Embedding
+		from keras.callbacks import EarlyStopping, ModelCheckpoint
+		from keras.optimizers import Adam
 
 
 	def make_model(self, verbose=True, weights=None):
@@ -298,36 +385,6 @@ class CNN:
 				nI.append(info)
 		return nX, nY, nI
 
-	# def optimize_epochs(self, datagen, epoch_range):
-	# 	n_splits = 5
-	# 	kf = KFold(n_splits=n_splits, shuffle=True, random_state=100)
-	# 	X, y, info, _, _, _, _, _ = next(datagen)
-	# 	results = []
-	# 	for e in epoch_range:
-	# 		print("Testing epoch count: {}".format(e))
-	# 		e_res = []
-	# 		foldn = 0
-	# 		for train_indexes, test_indexes in kf.split(X):
-	# 			print("Fold: {}/{}".format(foldn+1, n_splits))
-	# 			foldn += 1
-	# 			X_train, y_train, train_info = [X[i] for i in train_indexes], [y[i] for i in train_indexes], [info[i] for i in train_indexes]
-	# 			X_test, y_test, test_info = [X[i] for i in test_indexes], [y[i] for i in test_indexes], [info[i] for i in test_indexes]
-	#
-	# 			if type(X_train) == list: ## book_split
-	# 				X_train, y_train, train_info = self.extract_nested(X_train, y_train, train_info)
-	# 				X_test, y_test, test_info = self.extract_nested(X_test, y_test, test_info)
-	#
-	# 			self.vocab = self.read_vocabulary(X_train)
-	# 			self.model = self.make_model(verbose=False)
-	#
-	# 			X_train, y_train = self.matrixify(X_train, y_train, train_info)
-	# 			X_test, y_test = self.matrixify(X_test, y_test, test_info)
-	#
-	# 			res = self.model.fit(X_train, y_train, batch_size=self.minibatch_size, shuffle=False, validation_data=(X_test, y_test), epochs=e)
-	# 			e_res.append(res.history["val_acc"][-1])
-	# 		results.append(sum(e_res) / len(e_res))
-	# 		print(results[-1])
-
 	def optimize_epochs(self, datagen, epoch_range):
 		n_splits = 5
 		kf = KFold(n_splits=n_splits, shuffle=True, random_state=100)
@@ -367,7 +424,6 @@ class CNN:
 			print("Epoch: {}\t Value: {}".format(i, val))
 
 		print("Max: {}".format(maxn / len(results[0]["val_acc"])))
-	#	print(results)
 		return results
 
 	def classify(self, threads, data_gen, classification_type):

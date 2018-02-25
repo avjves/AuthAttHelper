@@ -126,7 +126,7 @@ class DataHandler:
 		for i in range(0, len(test_data)):
 			X_test = [list(test_data).pop(i)]
 			y_test = [list(test_y).pop(i)]
-			t_info = list(test_info).pop(i)
+			t_info = [list(test_info).pop(i)]
 			yield train_data, train_y, train_info, X_test, y_test, t_info, i+1, len(test_data)
 			#yield train_data, train_y, train_info, test_data, test_y, test_info, 0, 0
 

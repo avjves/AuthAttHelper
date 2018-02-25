@@ -16,13 +16,14 @@ class Plotter():
 
 
 	def plot(self, values, infos, mapping, title):
-		x = [val[0] for val in values]
+		x = [val for val in values]
 		if self.scale and len(x) > 1:
 			max_val, min_val = max(x), min(x)
 			x = [self.conv(val, min_val, max_val, -1, 1) for val in x]
 		y = []
 		for info in infos:
-			if info[0][0] not in mapping or info[0][0] == "Test":
+			#print(info)
+			if info[0] not in mapping or info[0].lower() == "test":
 				y.append("Green")
 			else:
 				y.append(mapping[info[0]])
